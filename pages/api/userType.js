@@ -6,7 +6,7 @@ async function getAuth() {
   const oAuth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
-    'https://developers.google.com/oauthplayground' // or your redirect URI
+    'https://oauth2.googleapis.com/token' // redirect URI (not used in server-side token refresh)
   );
 
   oAuth2Client.setCredentials({
@@ -26,7 +26,7 @@ export default async function handler(req, res) {
     const auth = await getAuth();
     const sheets = google.sheets({ version: 'v4', auth });
 
-    // Check 'Contact details' sheet for sellers/buyers
+    // Check 'Contact details' sheet for seller
     const sellersResp = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
       range: "'Contact details'!A:C"
@@ -54,6 +54,7 @@ export default async function handler(req, res) {
       roles.push("seller");
       sellerName = foundSeller[1];
     }
+
     if (foundStockist) {
       roles.push("stockist");
       stockistTab = foundStockist[1];
@@ -64,6 +65,7 @@ export default async function handler(req, res) {
     }
 
     return res.status(200).json({ roles, sellerName, stockistTab });
+
   } catch (error) {
     console.error("Error in userType API:", error);
     res.status(500).json({ error: 'Failed to look up user type.' });
