@@ -1,17 +1,18 @@
-import fs from 'fs/promises';
-import path from 'path';
 import { google } from 'googleapis';
 
-const TOKEN_PATH = path.join(process.cwd(), 'token.json');
-const CREDENTIALS_PATH = path.join(process.cwd(), 'credentials.json');
 const SHEET_ID = '1KcVAXkufZsDc8_XZr-fw2qfS3MjPERos84WhHcDba2o'; // Your Sheet ID
 
 async function getAuth() {
-  const credentials = JSON.parse(await fs.readFile(CREDENTIALS_PATH, 'utf-8'));
-  const token = JSON.parse(await fs.readFile(TOKEN_PATH, 'utf-8'));
-  const { client_secret, client_id, redirect_uris } = credentials.installed;
-  const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, redirect_uris[0]);
-  oAuth2Client.setCredentials(token);
+  const oAuth2Client = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    'https://developers.google.com/oauthplayground'
+  );
+
+  oAuth2Client.setCredentials({
+    refresh_token: process.env.GOOGLE_REFRESH_TOKEN
+  });
+
   return oAuth2Client;
 }
 
@@ -21,6 +22,7 @@ export default async function handler(req, res) {
     if (!mobile) {
       return res.status(400).json({ error: 'Missing mobile parameter.' });
     }
+
     const auth = await getAuth();
     const sheets = google.sheets({ version: 'v4', auth });
 
@@ -29,14 +31,16 @@ export default async function handler(req, res) {
       spreadsheetId: SHEET_ID,
       range: "'Contact details'!A:C"
     });
+
     const contacts = contactsResp.data.values || [];
-    // Find row where mobile matches (strip +91 if needed)
     const found = contacts.find((row, idx) =>
       idx !== 0 && (row[0] === mobile || row[0] === "+91" + mobile)
     );
+
     if (!found) {
       return res.status(404).json({ error: "Mobile number not found in contact details." });
     }
+
     const tabName = found[1]; // Name column as tab name
 
     // Step 2: Fetch that stockist's tab
@@ -44,6 +48,7 @@ export default async function handler(req, res) {
       spreadsheetId: SHEET_ID,
       range: `'${tabName}'!A:Z`
     });
+
     const rows = dataResp.data.values || [];
 
     // Step 3: Compute summary
