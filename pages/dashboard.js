@@ -8,16 +8,16 @@ import WarehouseIcon from "@mui/icons-material/Warehouse";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import { Stack, Alert } from "@mui/material";
 
-// Seller columns
+// Seller columns (now with Commodity at index 4)
 const sellerColumns = [
-  "Date", "Purchase from", "Mobile number", "RST No", "Quantity", "reduction",
+  "Date", "Purchase from", "Mobile number", "RST No", "Commodity", "Quantity", "reduction",
   "Net Quantity", "Rate", "Cost", "Handling charge", "Total Cost", "Payment date",
   "PAYMENT DETAILS", "QUALITY"
 ];
 
-// Stockist columns (as per your sheet)
+// Stockist columns (now with Commodity at index 4)
 const stockistColumns = [
-  "Date", "Purchase from", "Name of Warehouse", "RST No", "Quantity", "Rate", "Total Cost",
+  "Date", "Purchase from", "Name of Warehouse", "RST No", "Commodity", "Quantity", "Rate", "Total Cost",
   "Handling charge", "Margin", "Payment Date", "Cash Loan", "Date (Cash Loan)",
   "Loan Against Margin", "Date (Margin Loan)", "Total Loan"
 ];
@@ -78,6 +78,14 @@ const formatTons = (value) => `${((value || 0) / 1000).toFixed(2)} MT`;
 const today = new Date();
 const formatToday = () => today.toLocaleDateString("en-GB").replace(/\//g, "/");
 
+// Helpers for Wheat/Maize totals
+function sumByCommodity(records, qtyIdx = 5, commodityIdx = 4, target) {
+  return (records || []).reduce((sum, row) =>
+    row && row[commodityIdx] && row[commodityIdx].toLowerCase() === target
+      ? sum + (parseFloat(row[qtyIdx]) || 0)
+      : sum, 0);
+}
+
 export default function Dashboard() {
   const router = useRouter();
   const { mobile } = router.query;
@@ -107,6 +115,7 @@ export default function Dashboard() {
     setSummary({});
     setShowDetails(false);
 
+    // Quantity index now 5; Commodity index now 4
     if (role === "seller") {
       fetch(`/api/getRecords?mobile=${mobile}`)
         .then(res => res.json())
@@ -114,8 +123,10 @@ export default function Dashboard() {
           setRecords(data.records || []);
           setSummary({
             entryCount: data.records?.length || 0,
-            totalQuantity: (data.records || []).reduce((sum, row) => sum + (parseFloat(row[4]) || 0), 0),
-            totalPayments: (data.records || []).reduce((sum, row) => sum + (parseFloat(row[10]) || 0), 0)
+            totalQuantity: (data.records || []).reduce((sum, row) => sum + (parseFloat(row[5]) || 0), 0),
+            wheatQty: sumByCommodity(data.records, 5, 4, "wheat"),
+            maizeQty: sumByCommodity(data.records, 5, 4, "maize"),
+            totalPayments: (data.records || []).reduce((sum, row) => sum + (parseFloat(row[11]) || 0), 0)
           });
         });
     }
@@ -129,37 +140,37 @@ export default function Dashboard() {
 
           // --- Warehouse Rental (pro-rated by days/30) ---
           const warehouseRental = (data.records || []).reduce((sum, row) => {
-            if (!row[0] || !row[4]) return sum;
+            if (!row[0] || !row[5]) return sum;
             const entryDate = parseDate(row[0]);
             if (!entryDate || isNaN(entryDate)) return sum;
-            const qtyTons = (parseFloat(row[4]) || 0) / 1000;
+            const qtyTons = (parseFloat(row[5]) || 0) / 1000;
             const days = daysBetween(entryDate, today);
             return sum + qtyTons * 100 * (days / 30);
           }, 0);
 
           // --- Cash Loan rows ---
           const filteredCashLoanRows = (data.records || []).filter(row =>
-            row[10] && row[11] && !isNaN(parseDate(row[11]))
+            row[11] && row[12] && !isNaN(parseDate(row[12]))
           );
           // --- Margin Loans and Repayments ---
           const marginLoans = (data.records || []).filter(row =>
-            row[12] && row[13] && !isNaN(parseDate(row[13]))
+            row[13] && row[14] && !isNaN(parseDate(row[14]))
           ).map(row => ({
-            principal: parseFloat(row[12]) || 0,
-            start: parseDate(row[13])
+            principal: parseFloat(row[13]) || 0,
+            start: parseDate(row[14])
           }));
           const repayments = (data.records || []).filter(row =>
-            row[8] && row[9] && !isNaN(parseDate(row[9]))
+            row[9] && row[10] && !isNaN(parseDate(row[10]))
           ).map(row => ({
-            amount: parseFloat(row[8]) || 0,
-            date: parseDate(row[9])
+            amount: parseFloat(row[9]) || 0,
+            date: parseDate(row[10])
           }));
 
           // --- Debug ---
           console.log("RECORDS LENGTH", data.records.length);
           filteredCashLoanRows.forEach((row, idx) => {
-            const cashLoanDate = parseDate(row[11]);
-            console.log("CashLoan Row", idx, "Amount", row[10], "Date", row[11], "Parsed Date", cashLoanDate);
+            const cashLoanDate = parseDate(row[12]);
+            console.log("CashLoan Row", idx, "Amount", row[11], "Date", row[12], "Parsed Date", cashLoanDate);
           });
           marginLoans.forEach((loan, idx) => {
             console.log("MarginLoan", idx, loan);
@@ -174,13 +185,13 @@ export default function Dashboard() {
 
           // Cash Loan Interest
           filteredCashLoanRows.forEach(row => {
-            const cashLoan = parseFloat(row[10]) || 0;
-            const cashLoanDate = parseDate(row[11]);
+            const cashLoan = parseFloat(row[11]) || 0;
+            const cashLoanDate = parseDate(row[12]);
             const days = daysBetween(cashLoanDate, today);
             const interestForRow = cashLoan * interestRate * (days / 365);
             console.log(
               "CashLoan", cashLoan,
-              "Date", row[11],
+              "Date", row[12],
               "Days", days,
               "InterestForRow", interestForRow
             );
@@ -229,11 +240,13 @@ export default function Dashboard() {
 
           setRecords(data.records || []);
           setSummary({
-            totalQuantity: (data.records || []).reduce((sum, row) => sum + (parseFloat(row[4]) || 0), 0),
-            totalCost: (data.records || []).reduce((sum, row) => sum + (parseFloat(row[6]) || 0), 0),
-            totalCashLoan: (data.records || []).reduce((sum, row) => sum + (parseFloat(row[10]) || 0), 0),
-            totalLoanMargin: (data.records || []).reduce((sum, row) => sum + (parseFloat(row[12]) || 0), 0)-(data.records || []).reduce((sum, row) => sum + (parseFloat(row[8]) || 0), 0),
-            totalLoan: (data.records || []).reduce((sum, row) => sum + (parseFloat(row[14]) || 0), 0),
+            totalQuantity: (data.records || []).reduce((sum, row) => sum + (parseFloat(row[5]) || 0), 0),
+            wheatQty: sumByCommodity(data.records, 5, 4, "wheat"),
+            maizeQty: sumByCommodity(data.records, 5, 4, "maize"),
+            totalCost: (data.records || []).reduce((sum, row) => sum + (parseFloat(row[7]) || 0), 0),
+            totalCashLoan: (data.records || []).reduce((sum, row) => sum + (parseFloat(row[11]) || 0), 0),
+            totalLoanMargin: (data.records || []).reduce((sum, row) => sum + (parseFloat(row[13]) || 0), 0)-(data.records || []).reduce((sum, row) => sum + (parseFloat(row[9]) || 0), 0),
+            totalLoan: (data.records || []).reduce((sum, row) => sum + (parseFloat(row[15]) || 0), 0),
             warehouseRental,
             totalInterest
           });
@@ -260,7 +273,7 @@ export default function Dashboard() {
 
   if (role && !records.length) return <div>No records found for this number.</div>;
 
-  // Seller Dashboard (unchanged)
+  // Seller Dashboard (unchanged except summary card for Wheat/Maize)
   if (role === "seller") {
     return (
       <Box maxWidth={1200} mx="auto" p={4}>
@@ -275,7 +288,11 @@ export default function Dashboard() {
           <Grid item xs={12} sm={4}>
             <Paper sx={{ p: 2, bgcolor: "#e8f5e9" }}>
               <Typography>Total Quantity</Typography>
-              <Typography variant="h6">{summary.totalQuantity}</Typography>
+              <Typography variant="h6">{formatTons(summary.totalQuantity)}</Typography>
+              <Typography variant="body2" color="text.secondary" mt={1}>
+                Wheat: {formatTons(summary.wheatQty)} <br />
+                Maize: {formatTons(summary.maizeQty)}
+              </Typography>
             </Paper>
           </Grid>
           <Grid item xs={12} sm={4}>
@@ -301,7 +318,7 @@ export default function Dashboard() {
                   <TableRow key={idx}>
                     {sellerColumns.map((_, i) =>
                       <TableCell key={i}>
-                        {(i === 0 || i === 11)
+                        {(i === 0 || i === 12)
                           ? formatDateDDMMYYYY(row[i])
                           : (row[i] || "")}
                       </TableCell>
@@ -316,7 +333,7 @@ export default function Dashboard() {
     );
   }
 
-  // NEW: Stockist Dashboard modern UI!
+  // Stockist Dashboard
   if (role === "stockist") {
     return (
       <Box maxWidth={1200} mx="auto" p={4}>
@@ -329,6 +346,10 @@ export default function Dashboard() {
               <Typography variant="subtitle1" color="text.secondary">Total Quantity</Typography>
               <Typography variant="h4" fontWeight={600} color="primary">
                 {formatTons(summary.totalQuantity)}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" mt={1}>
+                Wheat: {formatTons(summary.wheatQty)} <br />
+                Maize: {formatTons(summary.maizeQty)}
               </Typography>
               <WarehouseIcon sx={{ fontSize: 34, color: "teal", mt: 1 }} />
             </Paper>
@@ -351,15 +372,15 @@ export default function Dashboard() {
               <Box height={34} />
             </Paper>
           </Grid>
-<Grid item xs={12} sm={6} md={2.4}>
-  <Paper elevation={3} sx={{ p: 3, textAlign: "center" }}>
-    <Typography variant="subtitle1">Total Loan<br />Against Margin</Typography>
-    <Typography variant="h4" fontWeight={700}>
-      {formatCurrency(summary.totalLoanMargin)}
-    </Typography>
-    <Box height={34} />
-  </Paper>
-</Grid>
+          <Grid item xs={12} sm={6} md={2.4}>
+            <Paper elevation={3} sx={{ p: 3, textAlign: "center" }}>
+              <Typography variant="subtitle1">Total Loan<br />Against Margin</Typography>
+              <Typography variant="h4" fontWeight={700}>
+                {formatCurrency(summary.totalLoanMargin)}
+              </Typography>
+              <Box height={34} />
+            </Paper>
+          </Grid>
           <Grid item xs={12} sm={6} md={2.4}>
             <Paper elevation={3} sx={{ p: 3, textAlign: "center" }}>
               <Typography variant="subtitle1" color="text.secondary">Total Loan</Typography>
@@ -408,7 +429,7 @@ export default function Dashboard() {
                   <TableRow key={idx}>
                     {stockistColumns.map((_, i) =>
                       <TableCell key={i}>
-                        {(i === 0 || i === 9 || i === 11 || i === 13)
+                        {(i === 0 || i === 10 || i === 12 || i === 14)
                           ? formatDateDDMMYYYY(row[i])
                           : (row[i] || "")}
                       </TableCell>
